@@ -1,0 +1,6 @@
+#NOTE: This is an internal implementation file, its format can be changed without prior notice.
+#Thu Jun 05 00:29:50 EDT 2014
+opentsdb-2.0.0.pom>=
+opentsdb-2.0.0-javadoc.jar>=
+opentsdb-2.0.0.jar>=
+opentsdb-2.0.0-sources.jar>=
