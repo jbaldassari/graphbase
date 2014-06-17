@@ -42,9 +42,6 @@ trait OpenTsdbStore extends MetricsStore {
 	
 	/** Walks all OpenTSDB trees and returns a map of fully-qualified metric name to TSUID */
 	def findMetrics(): SortedMap[String, String] = {
-		val startTime = System.nanoTime
-		logger.info("Searching all OpenTSDB trees for metrics...")
-		
 		/** Enumerates all metrics in the given tree */
 		def walkTree(tree: Tree): SortedMap[String, String] = {
 			val branch = new Branch(tree.getTreeId())
@@ -87,12 +84,13 @@ trait OpenTsdbStore extends MetricsStore {
 			}
 		}
 		
+		logger.info("Searching all OpenTSDB trees for metrics...")
+		val startTime = System.nanoTime
 		val trees = Tree.fetchAllTrees(tsdb).join()
 		val metrics = trees.foldLeft(new TreeMap[String, String]()) {
 			(metrics, tree) => metrics ++ walkTree(tree)
 		}
 		if (logger.isDebugEnabled) logger.debug("All metrics: " + metrics)
-		
 		val durationMillis = round((System.nanoTime - startTime) / 1e6d)
 		logger.info("Found " + metrics.size + " OpenTSDB metrics in " + durationMillis + "ms.")
 		metrics
@@ -120,12 +118,12 @@ trait OpenTsdbStore extends MetricsStore {
 	
 	/** Retrieves metrics data from OpenTSDB and downsamples it to regularly spaced intervals */
 	private def fetchValues(tsuid: String, from: Date, until: Date): MetricsValues = {
-		val fetchStartTime = System.nanoTime
 		val query = tsdb.newQuery()
 		query.setStartTime(from.getTime)
 		query.setEndTime(until.getTime)
 		query.setTimeSeries(java.util.Arrays.asList(tsuid), Aggregators.SUM, false)
 		
+		val fetchStartTime = System.nanoTime
 		val results = query.run()
 		if (logger.isDebugEnabled) {
 			logger.debug("Completed fetching values for TSUID " + tsuid + 
@@ -153,11 +151,11 @@ trait OpenTsdbStore extends MetricsStore {
 	/** Converts an OpenTSDB DataPoints instance to a sequence of OpenTsdbDataPoint instances */
 	def dataPoints2Seq(dataPoints: DataPoints, from: Date): Seq[OpenTsdbDataPoint] = {
 		@tailrec
-		def dataPointIter2SeqTR(iter: Iterator[DataPoint], points: ListBuffer[OpenTsdbDataPoint] = ListBuffer()): Seq[OpenTsdbDataPoint] = {
+		def dataPointIter2Seq(iter: Iterator[DataPoint], points: ListBuffer[OpenTsdbDataPoint] = ListBuffer()): Seq[OpenTsdbDataPoint] = {
 			if (!iter.hasNext) points.toSeq
 			else {
 				val next = iter.next
-				dataPointIter2SeqTR(iter, points += OpenTsdbDataPoint(next.timestamp, next.toDouble))
+				dataPointIter2Seq(iter, points += OpenTsdbDataPoint(next.timestamp, next.toDouble))
 			}
 		}
 		val iter = {
@@ -165,7 +163,7 @@ trait OpenTsdbStore extends MetricsStore {
 			dpi.seek(from.getTime)
 			dpi
 		}
-		dataPointIter2SeqTR(iter)
+		dataPointIter2Seq(iter)
 	}
 	
 	/** Normalizes a sequence of data points with arbitrary timestamps into a sequence of regularly-spaced average values. */
@@ -199,12 +197,15 @@ trait OpenTsdbStore extends MetricsStore {
 						val stepEnd = stepStart + stepLengthMillis
 						val pointTimestamp = head.timestamp
 						if (pointTimestamp < stepStart) {
+							// Ignore this data point because it occurs before the interval we're interested in
 							downsampleTR(tail, currentStep, currentStepPoints, allStepPoints)
 						}
 						else if (pointTimestamp < stepEnd) {
+							// Add this point to the sequence of points which will be averaged for this interval
 							downsampleTR(tail, currentStep, currentStepPoints :+ head.value, allStepPoints)
 						}
 						else {
+							// We've hit the end of the interval, so average all points that we've seen in this interval
 							val avg: Option[Double] = if (currentStepPoints.isEmpty) None else Some(currentStepPoints.reduceLeft(_ + _) / currentStepPoints.size.toDouble)
 							if (logger.isTraceEnabled) logger.trace("Step " + currentStep + " has " + currentStepPoints.size + " data points with average: " + avg)
 							downsampleTR(head :: tail, currentStep + 1, List(), allStepPoints :+ avg)
@@ -218,8 +219,8 @@ trait OpenTsdbStore extends MetricsStore {
 	}
 		
 	override def closeStore() = {
-		tsdb.shutdown()
 		timer.cancel()
+		tsdb.shutdown()
 	}
 }
 

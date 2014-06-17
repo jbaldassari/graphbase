@@ -15,6 +15,8 @@ import GraphiteRemoteStorage._
 /** Mimics the Graphite Remote Storage API **/
 trait GraphiteRemoteStorage extends unfiltered.filter.Plan with MetricsStore {
 	val logger = Logger.getLogger(getClass())
+	
+	/** node.py */
 	lazy val nodePy: String = {
 		val is = classOf[GraphiteRemoteStorage].getResourceAsStream(NODE_PY_PATH)
 		try {
@@ -31,12 +33,15 @@ trait GraphiteRemoteStorage extends unfiltered.filter.Plan with MetricsStore {
 		InternalServerError ~> PlainTextContent ~> ResponseString(error)
 	}
 	
+	/** HTTP 400 + plaintext error message in response body */
 	def badRequest(message: String) = 
 		BadRequest ~> PlainTextContent ~> ResponseString(message)	
 	
+	/** HTTP 400 + plaintext error message about missing param in response body */
 	def requiredParameterMissing(param: String) = 
 		badRequest("Required parameter missing: " + param)
 
+	/** HTTP 400 + plaintext error message about invalid param in response body */
 	def invalidParameterValue(param: String) = 
 		badRequest("Invalid value for parameter " + param)
 	
@@ -48,9 +53,8 @@ trait GraphiteRemoteStorage extends unfiltered.filter.Plan with MetricsStore {
 		query <- lookup(QUERY_PARAM) is(required(requiredParameterMissing(QUERY_PARAM)))
 	} yield FindParams(query.get)
 	
-	val nowInSeconds = System.currentTimeMillis / 1000
-	val oneDayInSeconds = 24L * 60L * 60L
-	def oneDayAgo = nowInSeconds - oneDayInSeconds
+	def nowInSeconds = System.currentTimeMillis / 1000
+	def oneDayAgo = nowInSeconds - ONE_DAY_IN_SECONDS
 	
 	/** Parameters for the 'render' API call */
 	case class RenderParams(val target: String, val from: Date, val until: Date)
@@ -214,4 +218,5 @@ object GraphiteRemoteStorage {
 	val UNTIL_PARAM = "until"
 	val NODE_PY_PATH = "/node.py"
 	val PICKLE_CONTENT_TYPE = ContentType("application/pickle")
+	val ONE_DAY_IN_SECONDS = 24L * 60L * 60L
 }
